@@ -1,0 +1,14 @@
+{
+  "mcp.servers": {
+    "tenx-analysis": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-server.js"],
+      "env": {
+        "TENX_DEVELOPER_ID": "assessment_user_001",
+        "TENX_ASSESSMENT_MODE": "true",
+        "LOG_LEVEL": "verbose"
+      },
+      "description": "Tenx MCP Analysis Server for Assessment"
+    }
+  }
+}
