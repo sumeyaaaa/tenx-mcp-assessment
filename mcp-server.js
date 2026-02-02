@@ -1,6 +1,7 @@
 // Tenx MCP Analysis Server - compatible with SDK 1.25.3
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -97,7 +98,7 @@ tools['log_performance_schema'] = {
 };
 
 // Register tools/list handler
-server.setRequestHandler('tools/list', async () => {
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: Object.values(tools).map(tool => ({
       name: tool.name,
@@ -108,7 +109,7 @@ server.setRequestHandler('tools/list', async () => {
 });
 
 // Register tools/call handler
-server.setRequestHandler('tools/call', async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   
   if (!tools[name]) {
