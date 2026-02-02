@@ -1,4 +1,4 @@
-// Tenx MCP Analysis Server - compatible with multiple SDK versions
+// Tenx MCP Analysis Server - compatible with SDK 1.25.3
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const fs = require('fs');
@@ -19,19 +19,8 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
-// Compatibility shim for registering tools
-if (typeof server.tool !== 'function') {
-  server.tool = function (name, schema, handler) {
-    if (typeof server.registerTool === 'function') return server.registerTool(name, schema, handler);
-    if (typeof server.register === 'function') return server.register(name, schema, handler);
-    if (typeof server.addTool === 'function') return server.addTool(name, schema, handler);
-
-    server._tools = server._tools || {};
-    server._tools[name] = { schema, handler };
-    console.warn(`Warning: using local fallback for tool registration: ${name}`);
-    return { name };
-  };
-}
+// Tool registry
+const tools = {};
 
 // Schemas
 const passageOfTimeSchema = {
@@ -65,32 +54,79 @@ const performanceSchema = {
   required: ['developer_id', 'performance_category', 'summary']
 };
 
-// Register tools
-server.tool('log_passage_of_time', passageOfTimeSchema, async (args) => {
-  console.log('📊 PASSAGE OF TIME:', { developer: args.developer_id, intent: args.primary_intent });
-  const entry = { timestamp: new Date().toISOString(), type: 'passage_of_time', data: args };
-  fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
-  return { content: [{ type: 'text', text: `✅ Passage of time logged for ${args.developer_id}` }] };
+// Register tools in registry
+tools['log_passage_of_time'] = {
+  name: 'log_passage_of_time',
+  description: 'Logs passage of time data for analysis',
+  inputSchema: passageOfTimeSchema,
+  handler: async (args) => {
+    try {
+      console.error('📊 PASSAGE OF TIME:', { developer: args.developer_id, intent: args.primary_intent });
+      const entry = { timestamp: new Date().toISOString(), type: 'passage_of_time', data: args };
+      fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+      return { content: [{ type: 'text', text: `✅ Passage of time logged for ${args.developer_id}` }] };
+    } catch (error) {
+      console.error('Error in log_passage_of_time:', error);
+      return { 
+        content: [{ type: 'text', text: `❌ Error: ${error.message}` }],
+        isError: true 
+      };
+    }
+  }
+};
+
+tools['log_performance_schema'] = {
+  name: 'log_performance_schema',
+  description: 'Logs performance schema data for analysis',
+  inputSchema: performanceSchema,
+  handler: async (args) => {
+    try {
+      const emoji = args.performance_category === 'efficient' ? '🚀' : (args.performance_category === 'inefficient' ? '🐌' : '🛑');
+      console.error(`${emoji} PERFORMANCE SCHEMA:`, { developer: args.developer_id, category: args.performance_category });
+      const entry = { timestamp: new Date().toISOString(), type: 'performance_schema', data: args };
+      fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+      return { content: [{ type: 'text', text: `${emoji} Performance schema logged: ${args.performance_category}` }] };
+    } catch (error) {
+      console.error('Error in log_performance_schema:', error);
+      return { 
+        content: [{ type: 'text', text: `❌ Error: ${error.message}` }],
+        isError: true 
+      };
+    }
+  }
+};
+
+// Register tools/list handler
+server.setRequestHandler('tools/list', async () => {
+  return {
+    tools: Object.values(tools).map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    }))
+  };
 });
 
-server.tool('log_performance_schema', performanceSchema, async (args) => {
-  const emoji = args.performance_category === 'efficient' ? '🚀' : (args.performance_category === 'inefficient' ? '🐌' : '🛑');
-  console.log(`${emoji} PERFORMANCE SCHEMA:`, { developer: args.developer_id, category: args.performance_category });
-  const entry = { timestamp: new Date().toISOString(), type: 'performance_schema', data: args };
-  fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
-  return { content: [{ type: 'text', text: `${emoji} Performance schema logged: ${args.performance_category}` }] };
+// Register tools/call handler
+server.setRequestHandler('tools/call', async (request) => {
+  const { name, arguments: args } = request.params;
+  
+  if (!tools[name]) {
+    throw new Error(`Tool not found: ${name}`);
+  }
+  
+  const tool = tools[name];
+  return await tool.handler(args || {});
 });
-
-// Optional tools/list using local map
-if (server._tools) {
-  server.tool('tools/list', { type: 'object' }, async () => ({ tools: Object.keys(server._tools).map((n) => ({ name: n, inputSchema: server._tools[n].schema })) }));
-}
 
 // Start
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log('✅ Tenx MCP Analysis Server running on stdio');
+  console.error('✅ Tenx MCP Analysis Server running on stdio');
 }
 
-main().catch((err) => { console.error('❌ Server error:', err); process.exit(1); });
+main().catch((err) => { 
+  console.error('❌ Server error:', err); 
+  process.exit(1); 
+});
